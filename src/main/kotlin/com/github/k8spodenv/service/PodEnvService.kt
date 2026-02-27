@@ -4,6 +4,36 @@ import java.util.concurrent.ConcurrentHashMap
 
 class PodEnvService(private val kubectl: KubectlExecutor = KubectlExecutor()) {
 
+    companion object {
+        /** Env vars that are pod/container-specific and should never be injected locally */
+        private val EXCLUDED_KEYS = setOf(
+            "JAVA_TOOL_OPTIONS",
+            "PATH",
+            "HOME",
+            "HOSTNAME",
+            "TERM",
+            "SHLVL",
+            "PWD",
+            "LANG",
+            "LC_ALL"
+        )
+
+        /** Prefixes for Kubernetes-injected service discovery vars */
+        private val EXCLUDED_PREFIXES = listOf(
+            "KUBERNETES_",
+            "KODA_CUSTODY_API_SERVICE_",  // k8s auto-generated service vars
+        )
+
+        fun shouldExclude(key: String): Boolean {
+            if (key in EXCLUDED_KEYS) return true
+            if (EXCLUDED_PREFIXES.any { key.startsWith(it) }) return true
+            // Exclude k8s service vars pattern: *_SERVICE_HOST, *_SERVICE_PORT, *_PORT_*
+            if (key.endsWith("_SERVICE_HOST") || key.endsWith("_SERVICE_PORT")) return true
+            if (key.contains("_PORT_") && (key.endsWith("_TCP") || key.endsWith("_UDP") || key.endsWith("_PROTO") || key.endsWith("_ADDR"))) return true
+            return false
+        }
+    }
+
     private data class CacheKey(val context: String, val namespace: String, val deployment: String)
     private data class CacheEntry(val envVars: Map<String, String>, val timestamp: Long)
 
@@ -75,6 +105,7 @@ class PodEnvService(private val kubectl: KubectlExecutor = KubectlExecutor()) {
                 val idx = line.indexOf('=')
                 line.substring(0, idx) to line.substring(idx + 1)
             }
+            .filterKeys { !shouldExclude(it) }
     }
 
     private fun <T> Result<T>.flatMap(transform: (T) -> Result<T>): Result<T> {
