@@ -29,6 +29,7 @@ dependencies {
     }
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
+    testImplementation("org.jetbrains.kotlin:kotlin-test:2.0.21")
     testImplementation("io.mockk:mockk:1.13.16")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
