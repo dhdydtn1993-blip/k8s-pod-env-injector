@@ -1,0 +1,19 @@
+<idea-plugin>
+    <id>com.github.k8spodenv</id>
+    <name>K8s Pod Env Injector</name>
+    <vendor>k8spodenv</vendor>
+
+    <description><![CDATA[
+        Fetches environment variables from a Kubernetes Pod (via kubectl exec)
+        and injects them into Spring Boot Run Configurations automatically.
+    ]]></description>
+
+    <depends>com.intellij.modules.java</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <runConfigurationExtension
+            implementation="com.github.k8spodenv.config.K8sPodEnvRunExtension"/>
+        <notificationGroup id="K8s Pod Env Injector"
+                           displayType="BALLOON"/>
+    </extensions>
+</idea-plugin>
