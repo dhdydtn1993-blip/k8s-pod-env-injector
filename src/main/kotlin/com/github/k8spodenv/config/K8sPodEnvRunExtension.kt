@@ -6,6 +6,8 @@ import com.intellij.execution.RunConfigurationExtension
 import com.intellij.execution.configurations.JavaParameters
 import com.intellij.execution.configurations.RunConfigurationBase
 import com.intellij.execution.configurations.RunnerSettings
+import com.intellij.execution.process.ProcessHandler
+import com.intellij.execution.process.ProcessOutputType
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.options.SettingsEditor
@@ -14,6 +16,7 @@ import org.jdom.Element
 class K8sPodEnvRunExtension : RunConfigurationExtension() {
 
     private val podEnvService = PodEnvService()
+    private var lastInjectedEnvVars: Map<String, String> = emptyMap()
 
     companion object {
         private const val ELEMENT_NAME = "k8s-pod-env"
@@ -52,16 +55,17 @@ class K8sPodEnvRunExtension : RunConfigurationExtension() {
         result.fold(
             onSuccess = { envVars ->
                 val existingEnv = params.env
-                var injectedCount = 0
+                val injected = mutableMapOf<String, String>()
                 for ((key, value) in envVars) {
                     if (!existingEnv.containsKey(key)) {
                         params.addEnv(key, value)
-                        injectedCount++
+                        injected[key] = value
                     }
                 }
+                lastInjectedEnvVars = injected
                 notify(
                     configuration,
-                    "Injected $injectedCount env vars from pod (${state.deployment})",
+                    "Injected ${injected.size} env vars from pod (${state.deployment})",
                     NotificationType.INFORMATION
                 )
             },
@@ -77,6 +81,23 @@ class K8sPodEnvRunExtension : RunConfigurationExtension() {
 
     override fun <P : RunConfigurationBase<*>> createEditor(configuration: P): SettingsEditor<P> {
         return K8sPodEnvSettingsEditor()
+    }
+
+    override fun attachToProcess(
+        configuration: RunConfigurationBase<*>,
+        handler: ProcessHandler,
+        runnerSettings: RunnerSettings?
+    ) {
+        if (lastInjectedEnvVars.isNotEmpty()) {
+            val sb = StringBuilder()
+            sb.appendLine("[K8s Pod Env Injector] Injected ${lastInjectedEnvVars.size} environment variables:")
+            for ((key, value) in lastInjectedEnvVars.toSortedMap()) {
+                sb.appendLine("  $key=$value")
+            }
+            sb.appendLine()
+            handler.notifyTextAvailable(sb.toString(), ProcessOutputType.SYSTEM)
+            lastInjectedEnvVars = emptyMap()
+        }
     }
 
     override fun getEditorTitle(): String = "K8s Pod Env"
