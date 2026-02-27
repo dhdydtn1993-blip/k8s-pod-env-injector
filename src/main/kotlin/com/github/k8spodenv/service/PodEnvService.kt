@@ -34,23 +34,28 @@ class PodEnvService(private val kubectl: KubectlExecutor = KubectlExecutor()) {
     }
 
     private fun findPod(context: String, namespace: String, deployment: String): Result<String> {
-        val args = listOf(
-            "get", "pods",
-            "-l", "app=$deployment",
-            "-n", namespace,
-            "--context=$context",
-            "--field-selector=status.phase=Running",
-            "-o", "name",
-            "--no-headers"
+        // Try both common label conventions: Helm standard and legacy
+        val labelSelectors = listOf(
+            "app.kubernetes.io/name=$deployment",
+            "app=$deployment"
         )
-        return kubectl.kubectl(args).flatMap { output ->
-            val firstPod = output.trim().lines().firstOrNull { it.isNotBlank() }
-            if (firstPod != null) {
-                Result.success(firstPod.removePrefix("pod/"))
-            } else {
-                Result.failure(RuntimeException("No running pods found for deployment '$deployment' in $namespace"))
+        for (selector in labelSelectors) {
+            val args = listOf(
+                "get", "pods",
+                "-l", selector,
+                "-n", namespace,
+                "--context=$context",
+                "--field-selector=status.phase=Running",
+                "-o", "name",
+                "--no-headers"
+            )
+            val result = kubectl.kubectl(args)
+            val pod = result.getOrNull()?.trim()?.lines()?.firstOrNull { it.isNotBlank() }
+            if (pod != null) {
+                return Result.success(pod.removePrefix("pod/"))
             }
         }
+        return Result.failure(RuntimeException("No running pods found for deployment '$deployment' in $namespace"))
     }
 
     private fun execEnv(context: String, namespace: String, podName: String): Result<String> {
