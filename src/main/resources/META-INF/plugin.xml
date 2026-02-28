@@ -4,8 +4,35 @@
     <vendor>k8spodenv</vendor>
 
     <description><![CDATA[
-        Fetches environment variables from a Kubernetes Pod (via kubectl exec)
-        and injects them into Spring Boot Run Configurations automatically.
+        <h2>K8s Pod Env Injector</h2>
+        <p>Fetches environment variables from a Kubernetes Pod (via <code>kubectl exec</code>)
+        and injects them into Spring Boot Run Configurations automatically.</p>
+
+        <h3>Features</h3>
+        <ul>
+            <li>Auto-populate Kube Context, Namespace, Deployment via dropdown</li>
+            <li>Env var whitelist support (empty = inject all, specified = inject only matching keys)</li>
+            <li>Filters out Kubernetes-internal env vars (KUBERNETES_*, *_SERVICE_HOST, etc.)</li>
+            <li>5-minute TTL cache for fetched env vars</li>
+            <li>Manual env vars in Run Configuration always take priority</li>
+        </ul>
+
+        <h3>Prerequisites</h3>
+        <ul>
+            <li><code>kubectl</code> installed and available on the system</li>
+            <li>Kubeconfig configured with cluster access (<code>kubectl config get-contexts</code> should list your clusters)</li>
+            <li>RBAC permissions to list namespaces, deployments, and exec into pods</li>
+            <li>At least one Running pod in the target Deployment</li>
+        </ul>
+
+        <h3>Usage</h3>
+        <ol>
+            <li>Open Run Configuration → <b>K8s Pod Env</b> tab</li>
+            <li>Check <b>Enable K8s Pod Env Injection</b></li>
+            <li>Select Kube Context, Namespace, Deployment from dropdowns</li>
+            <li>(Optional) Set env var whitelist to inject only specific keys</li>
+            <li>Run your application — pod env vars are injected automatically</li>
+        </ol>
     ]]></description>
 
     <depends>com.intellij.modules.java</depends>

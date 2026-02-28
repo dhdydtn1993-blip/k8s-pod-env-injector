@@ -6,24 +6,26 @@ import com.intellij.execution.RunConfigurationExtension
 import com.intellij.execution.configurations.JavaParameters
 import com.intellij.execution.configurations.RunConfigurationBase
 import com.intellij.execution.configurations.RunnerSettings
-import com.intellij.execution.process.ProcessHandler
-import com.intellij.execution.process.ProcessOutputType
+import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.options.SettingsEditor
+import com.intellij.openapi.ui.DialogWrapper
+import javax.swing.JComponent
+import javax.swing.JScrollPane
+import javax.swing.JTextArea
 import org.jdom.Element
 
 class K8sPodEnvRunExtension : RunConfigurationExtension() {
 
     private val podEnvService = PodEnvService()
-    private var lastInjectedEnvVars: Map<String, String> = emptyMap()
-
     companion object {
         private const val ELEMENT_NAME = "k8s-pod-env"
         private const val ATTR_ENABLED = "enabled"
         private const val ATTR_CONTEXT = "context"
         private const val ATTR_NAMESPACE = "namespace"
         private const val ATTR_DEPLOYMENT = "deployment"
+        private const val ATTR_WHITELIST = "whitelist"
     }
 
     override fun isApplicableFor(configuration: RunConfigurationBase<*>): Boolean {
@@ -55,18 +57,23 @@ class K8sPodEnvRunExtension : RunConfigurationExtension() {
         result.fold(
             onSuccess = { envVars ->
                 val existingEnv = params.env
+                val whitelistKeys = state.whitelistKeys()
+                val filtered = if (whitelistKeys.isEmpty()) {
+                    envVars
+                } else {
+                    envVars.filterKeys { it in whitelistKeys }
+                }
                 val injected = mutableMapOf<String, String>()
-                for ((key, value) in envVars) {
+                for ((key, value) in filtered) {
                     if (!existingEnv.containsKey(key)) {
                         params.addEnv(key, value)
                         injected[key] = value
                     }
                 }
-                lastInjectedEnvVars = injected
-                notify(
+                notifyWithDetails(
                     configuration,
                     "Injected ${injected.size} env vars from pod (${state.deployment})",
-                    NotificationType.INFORMATION
+                    injected
                 )
             },
             onFailure = { error ->
@@ -81,23 +88,6 @@ class K8sPodEnvRunExtension : RunConfigurationExtension() {
 
     override fun <P : RunConfigurationBase<*>> createEditor(configuration: P): SettingsEditor<P> {
         return K8sPodEnvSettingsEditor()
-    }
-
-    override fun attachToProcess(
-        configuration: RunConfigurationBase<*>,
-        handler: ProcessHandler,
-        runnerSettings: RunnerSettings?
-    ) {
-        if (lastInjectedEnvVars.isNotEmpty()) {
-            val sb = StringBuilder()
-            sb.appendLine("[K8s Pod Env Injector] Injected ${lastInjectedEnvVars.size} environment variables:")
-            for ((key, value) in lastInjectedEnvVars.toSortedMap()) {
-                sb.appendLine("  $key=$value")
-            }
-            sb.appendLine()
-            handler.notifyTextAvailable(sb.toString(), ProcessOutputType.SYSTEM)
-            lastInjectedEnvVars = emptyMap()
-        }
     }
 
     override fun getEditorTitle(): String = "K8s Pod Env"
@@ -120,7 +110,8 @@ class K8sPodEnvRunExtension : RunConfigurationExtension() {
             enabled = child.getAttributeValue(ATTR_ENABLED)?.toBoolean() ?: false,
             context = child.getAttributeValue(ATTR_CONTEXT) ?: "",
             namespace = child.getAttributeValue(ATTR_NAMESPACE) ?: "default",
-            deployment = child.getAttributeValue(ATTR_DEPLOYMENT) ?: ""
+            deployment = child.getAttributeValue(ATTR_DEPLOYMENT) ?: "",
+            whitelist = child.getAttributeValue(ATTR_WHITELIST) ?: ""
         )
     }
 
@@ -130,6 +121,7 @@ class K8sPodEnvRunExtension : RunConfigurationExtension() {
         child.setAttribute(ATTR_CONTEXT, state.context)
         child.setAttribute(ATTR_NAMESPACE, state.namespace)
         child.setAttribute(ATTR_DEPLOYMENT, state.deployment)
+        child.setAttribute(ATTR_WHITELIST, state.whitelist)
         element.addContent(child)
     }
 
@@ -139,6 +131,45 @@ class K8sPodEnvRunExtension : RunConfigurationExtension() {
                 .getNotificationGroup("K8s Pod Env Injector")
                 .createNotification(message, type)
                 .notify(configuration.project)
+        } catch (_: Exception) {
+            // Notification group not registered, silently ignore
+        }
+    }
+
+    private fun notifyWithDetails(
+        configuration: RunConfigurationBase<*>,
+        message: String,
+        envVars: Map<String, String>
+    ) {
+        try {
+            val notification = NotificationGroupManager.getInstance()
+                .getNotificationGroup("K8s Pod Env Injector")
+                .createNotification(message, NotificationType.INFORMATION)
+
+            if (envVars.isNotEmpty()) {
+                notification.addAction(NotificationAction.createSimple("Show Details") {
+                    val text = envVars.toSortedMap().entries.joinToString("\n") { "${it.key}=${it.value}" }
+                    val dialog = object : DialogWrapper(configuration.project, false) {
+                        init {
+                            title = "Injected Environment Variables (${envVars.size})"
+                            init()
+                        }
+
+                        override fun createCenterPanel(): JComponent {
+                            val textArea = JTextArea(text).apply {
+                                isEditable = false
+                                rows = minOf(envVars.size + 1, 30)
+                                columns = 80
+                            }
+                            return JScrollPane(textArea)
+                        }
+                    }
+                    dialog.show()
+                    notification.expire()
+                })
+            }
+
+            notification.notify(configuration.project)
         } catch (_: Exception) {
             // Notification group not registered, silently ignore
         }

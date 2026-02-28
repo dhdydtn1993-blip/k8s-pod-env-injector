@@ -56,4 +56,19 @@ class KubectlExecutor {
     fun kubectl(args: List<String>, timeoutSeconds: Long = 10): Result<String> {
         return execute(args, commandOverride = findKubectl(), timeoutSeconds = timeoutSeconds)
     }
+
+    fun getContexts(): Result<List<String>> {
+        return kubectl(listOf("config", "get-contexts", "-o", "name"))
+            .map { it.trim().lines().filter { line -> line.isNotBlank() } }
+    }
+
+    fun getNamespaces(context: String): Result<List<String>> {
+        return kubectl(listOf("get", "namespaces", "--context=$context", "-o", "name"))
+            .map { it.trim().lines().filter { line -> line.isNotBlank() }.map { line -> line.removePrefix("namespace/") } }
+    }
+
+    fun getDeployments(context: String, namespace: String): Result<List<String>> {
+        return kubectl(listOf("get", "deployments", "-n", namespace, "--context=$context", "-o", "name"))
+            .map { it.trim().lines().filter { line -> line.isNotBlank() }.map { line -> line.removePrefix("deployment.apps/") } }
+    }
 }
